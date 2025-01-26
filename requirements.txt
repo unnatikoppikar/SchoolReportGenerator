@@ -1,0 +1,6 @@
+pandas==2.1.2
+docx2pdf==0.1.8
+docxcompose==1.4.0
+docxtpl==0.16.7
+python-docx==1.1.0
+gooey
