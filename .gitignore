@@ -9,3 +9,5 @@ venv/*
 *report_cards*
 word/*
 __pycache__/*
+dist/*
+!dist/ReportGenV2.exe

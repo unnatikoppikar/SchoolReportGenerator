@@ -41,7 +41,7 @@ venv\Scripts\activate
 
 # macOS/Linux
 python3 -m venv venv
-source venv/bin/activate
+source venv/Scripts/activate
 ```
 
 ### 3. Install Dependencies
@@ -88,7 +88,7 @@ python ReportGenV2.py
 #### Using PyInstaller
 ```bash
 # Create executable
-python -m PyInstaller --onefile --windowed --add-data "input_files;input_files" --add-data "mappings;mappings" ReportGenV2.py
+pyinstaller --onefile --windowed ReportGenV2.py
 ```
 ## Running Tests
 
