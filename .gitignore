@@ -6,3 +6,4 @@ build/*
 !/mappings/test*
 *.exe
 venv/*
+*report_cards*
