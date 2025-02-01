@@ -1,5 +1,8 @@
 # Report Card Generator
 
+## Download Application
+[ReportGenV2.exe](dist/ReportGenV2.exe)
+
 ## Project Overview
 A Python-based application for generating report cards from Excel files using a Word template.
 
