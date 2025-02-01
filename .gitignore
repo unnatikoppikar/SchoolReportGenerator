@@ -1,0 +1,7 @@
+build/*
+*.spec
+/input_files/*
+!/input_files/test*
+/mappings/*
+!/mappings/test*
+*.exe
