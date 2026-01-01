@@ -2,24 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using QuestPDF.Fluent;
-using QuestPDF.Helpers;
-using QuestPDF.Infrastructure;
+using System.Runtime.InteropServices;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace SchoolReportGenerator.Services;
 
 /// <summary>
 /// Manages the generation of report cards.
-/// Uses QuestPDF to generate PDFs matching Word template layout.
+/// Uses Open XML SDK to fill templates + Word Interop for PDF conversion.
 /// </summary>
 public class ReportCardGenerator
 {
-    public ReportCardGenerator()
-    {
-        // Set QuestPDF license (free for open source / personal use)
-        QuestPDF.Settings.License = LicenseType.Community;
-    }
-
     /// <summary>
     /// Generate report cards for a given class.
     /// </summary>
@@ -30,8 +24,10 @@ public class ReportCardGenerator
         Console.WriteLine($"mapping_path: {mappingPath}");
 
         // Setup directories
-        var reportCardsDir = $"{className} report_cards";
+        var reportCardsDir = Path.Combine(Directory.GetCurrentDirectory(), $"{className} report_cards");
+        var tempDir = Path.Combine(Directory.GetCurrentDirectory(), "temp_docx");
         EnsureDirectoryExists(reportCardsDir);
+        EnsureDirectoryExists(tempDir);
 
         // Process data
         using var dataProcessor = new DataProcessor(excelPath, mappingPath);
@@ -41,7 +37,10 @@ public class ReportCardGenerator
         var total = studentRows.Count;
         var current = 0;
 
-        // Generate PDF for each student
+        // Collect all docx files to convert
+        var docxFiles = new List<(string docxPath, string pdfPath)>();
+
+        // Step 1: Fill templates (fast, no Word needed)
         foreach (var row in studentRows)
         {
             var studentData = dataProcessor.ProcessStudentData(row, className);
@@ -55,99 +54,125 @@ public class ReportCardGenerator
             var studentName = studentData["name"];
             
             // Report progress
-            progressCallback?.Invoke(current, total, studentName);
-            Console.WriteLine($"Generating Report card for {studentName} ({current}/{total})");
+            progressCallback?.Invoke(current, total, $"{studentName} (filling template)");
+            Console.WriteLine($"Filling template for {studentName} ({current}/{total})");
 
+            var docxPath = Path.Combine(tempDir, $"{studentName}.docx");
             var pdfPath = Path.Combine(reportCardsDir, $"{studentName}.pdf");
-            CreatePdfReportCard(studentData, pdfPath);
+            
+            FillWordTemplate(templatePath, studentData, docxPath);
+            docxFiles.Add((docxPath, pdfPath));
+        }
+
+        // Step 2: Convert all to PDF using Word (batch for efficiency)
+        Console.WriteLine("Converting to PDF...");
+        ConvertDocxToPdfBatch(docxFiles, progressCallback, total);
+
+        // Cleanup temp files
+        try { Directory.Delete(tempDir, true); } catch { }
+    }
+
+    /// <summary>
+    /// Fill Word template using Open XML SDK (no Word needed).
+    /// </summary>
+    private void FillWordTemplate(string templatePath, Dictionary<string, string> studentData, string outputPath)
+    {
+        // Copy template to output
+        File.Copy(templatePath, outputPath, true);
+
+        // Open and modify
+        using var doc = WordprocessingDocument.Open(outputPath, true);
+        var body = doc.MainDocumentPart?.Document?.Body;
+        
+        if (body == null) return;
+
+        // Replace all placeholders
+        foreach (var text in body.Descendants<Text>())
+        {
+            foreach (var kvp in studentData)
+            {
+                var placeholder = "{{" + kvp.Key + "}}";
+                if (text.Text.Contains(placeholder))
+                {
+                    text.Text = text.Text.Replace(placeholder, kvp.Value);
+                }
+            }
+        }
+
+        doc.MainDocumentPart?.Document?.Save();
+    }
+
+    /// <summary>
+    /// Convert docx files to PDF using Word Interop (batch processing).
+    /// </summary>
+    private void ConvertDocxToPdfBatch(List<(string docxPath, string pdfPath)> files, Action<int, int, string>? progressCallback, int total)
+    {
+        dynamic? wordApp = null;
+        
+        try
+        {
+            // Create Word application
+            var wordType = Type.GetTypeFromProgID("Word.Application");
+            if (wordType == null)
+            {
+                Console.WriteLine("Microsoft Word is not installed. Keeping .docx files only.");
+                // Copy docx to output folder
+                foreach (var (docxPath, pdfPath) in files)
+                {
+                    var docxOutput = Path.ChangeExtension(pdfPath, ".docx");
+                    File.Copy(docxPath, docxOutput, true);
+                }
+                return;
+            }
+
+            wordApp = Activator.CreateInstance(wordType);
+            wordApp.Visible = false;
+            wordApp.DisplayAlerts = 0; // wdAlertsNone
+
+            var current = 0;
+            foreach (var (docxPath, pdfPath) in files)
+            {
+                current++;
+                var studentName = Path.GetFileNameWithoutExtension(docxPath);
+                progressCallback?.Invoke(current, total, $"{studentName} (converting to PDF)");
+                Console.WriteLine($"Converting {studentName} to PDF ({current}/{files.Count})");
+
+                dynamic doc = wordApp.Documents.Open(Path.GetFullPath(docxPath));
+                
+                // WdSaveFormat.wdFormatPDF = 17
+                doc.SaveAs2(Path.GetFullPath(pdfPath), 17);
+                doc.Close(0); // wdDoNotSaveChanges
+                
+                Marshal.ReleaseComObject(doc);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"PDF conversion error: {ex.Message}");
+            Console.WriteLine("Keeping .docx files only.");
+            
+            // Copy docx to output folder as fallback
+            foreach (var (docxPath, pdfPath) in files)
+            {
+                var docxOutput = Path.ChangeExtension(pdfPath, ".docx");
+                if (File.Exists(docxPath))
+                    File.Copy(docxPath, docxOutput, true);
+            }
+        }
+        finally
+        {
+            if (wordApp != null)
+            {
+                try
+                {
+                    wordApp.Quit(0);
+                    Marshal.ReleaseComObject(wordApp);
+                }
+                catch { }
+            }
         }
     }
 
-    /// <summary>
-    /// Create a PDF report card matching the Word template table layout.
-    /// </summary>
-    private void CreatePdfReportCard(Dictionary<string, string> studentData, string outputPath)
-    {
-        Document.Create(container =>
-        {
-            container.Page(page =>
-            {
-                page.Size(PageSizes.A4);
-                page.Margin(50);
-                page.DefaultTextStyle(x => x.FontSize(11));
-
-                page.Content().Column(col =>
-                {
-                    col.Spacing(0);
-
-                    // Create table matching Word template (GridTable4-Accent5 style)
-                    col.Item().Table(table =>
-                    {
-                        // Define columns (matching Word: 2547 + 4394 ratio ≈ 37% + 63%)
-                        table.ColumnsDefinition(columns =>
-                        {
-                            columns.RelativeColumn(37);
-                            columns.RelativeColumn(63);
-                        });
-
-                        // Header row style (dark background, white text)
-                        var headerStyle = TextStyle.Default.Bold().FontColor(Colors.White);
-                        var headerBg = Colors.Blue.Accent2;
-                        
-                        // Alternating row colors
-                        var oddRowBg = Colors.Blue.Lighten4;
-                        var evenRowBg = Colors.White;
-
-                        int rowIndex = 0;
-                        foreach (var kvp in studentData)
-                        {
-                            if (kvp.Key == "class" && studentData.ContainsKey("class"))
-                            {
-                                // Skip if we're iterating and will handle class separately
-                            }
-                            
-                            var isFirstRow = rowIndex == 0;
-                            var bgColor = isFirstRow ? headerBg : (rowIndex % 2 == 1 ? oddRowBg : evenRowBg);
-                            var textStyle = isFirstRow ? headerStyle : TextStyle.Default;
-                            
-                            // Label cell (left column)
-                            table.Cell()
-                                .Background(isFirstRow ? headerBg : Colors.Blue.Lighten3)
-                                .Border(1)
-                                .BorderColor(Colors.Grey.Lighten1)
-                                .Padding(8)
-                                .Text(FormatFieldName(kvp.Key))
-                                .Bold();
-
-                            // Value cell (right column)
-                            table.Cell()
-                                .Background(bgColor)
-                                .Border(1)
-                                .BorderColor(Colors.Grey.Lighten1)
-                                .Padding(8)
-                                .Text(kvp.Value)
-                                .Style(isFirstRow ? headerStyle : TextStyle.Default);
-
-                            rowIndex++;
-                        }
-                    });
-                });
-            });
-        }).GeneratePdf(outputPath);
-    }
-
-    /// <summary>
-    /// Format field name for display (capitalize first letter).
-    /// </summary>
-    private string FormatFieldName(string fieldName)
-    {
-        if (string.IsNullOrEmpty(fieldName)) return fieldName;
-        return char.ToUpper(fieldName[0]) + fieldName.Substring(1);
-    }
-
-    /// <summary>
-    /// Create directory if it doesn't exist.
-    /// </summary>
     private void EnsureDirectoryExists(string directory)
     {
         if (!Directory.Exists(directory))
