@@ -4,7 +4,9 @@ A cross-platform application for generating PDF report cards from Excel data.
 
 ## Download
 
-**[SchoolReportGenerator.exe](./dist/SchoolReportGenerator.exe)** - Windows executable (self-contained, no installation required)
+**[Download SchoolReportGenerator.exe](https://github.com/utkarsh-koppikar/SchoolReportGenerator/releases/latest/download/SchoolReportGenerator.exe)** - Windows executable (self-contained, no installation required)
+
+[View all releases](https://github.com/utkarsh-koppikar/SchoolReportGenerator/releases)
 
 ## Features
 
