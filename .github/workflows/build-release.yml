@@ -1,0 +1,68 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore SchoolReportGeneratorCSharp/SchoolReportGenerator.csproj
+
+    - name: Build
+      run: dotnet build SchoolReportGeneratorCSharp/SchoolReportGenerator.csproj --configuration Release --no-restore
+
+    - name: Publish Windows exe
+      run: dotnet publish SchoolReportGeneratorCSharp/SchoolReportGenerator.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish
+
+    - name: Get short SHA
+      id: sha
+      run: echo "SHORT_SHA=$($env:GITHUB_SHA.Substring(0,7))" >> $env:GITHUB_OUTPUT
+
+    - name: Delete existing latest release
+      uses: dev-drprasad/delete-tag-and-release@v1.0
+      with:
+        tag_name: latest
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        delete_release: true
+      continue-on-error: true
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: latest
+        name: Latest Build (${{ steps.sha.outputs.SHORT_SHA }})
+        body: |
+          ## Automatic Build
+          
+          Built from commit: ${{ github.sha }}
+          
+          ### Download
+          Download `SchoolReportGenerator.exe` below and run it on any Windows 10/11 machine.
+          
+          ### Requirements
+          - Windows 10/11
+          - Microsoft Word (for PDF conversion) OR just use .docx output
+          
+          ### Usage
+          1. Run the exe
+          2. Select your Excel file, Word template, and mapping JSON
+          3. Enter class name
+          4. Click Generate!
+        files: ./publish/SchoolReportGenerator.exe
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
