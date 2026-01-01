@@ -3,7 +3,10 @@ name: Build and Release
 on:
   push:
     branches: [main]
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -16,7 +19,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x'
+        dotnet-version: '8.0.x'
 
     - name: Restore dependencies
       run: dotnet restore SchoolReportGeneratorCSharp/SchoolReportGenerator.csproj
@@ -27,23 +30,11 @@ jobs:
     - name: Publish Windows exe
       run: dotnet publish SchoolReportGeneratorCSharp/SchoolReportGenerator.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./publish
 
-    - name: Get short SHA
-      id: sha
-      run: echo "SHORT_SHA=$($env:GITHUB_SHA.Substring(0,7))" >> $env:GITHUB_OUTPUT
-
-    - name: Delete existing latest release
-      uses: dev-drprasad/delete-tag-and-release@v1.0
-      with:
-        tag_name: latest
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        delete_release: true
-      continue-on-error: true
-
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: latest
-        name: Latest Build (${{ steps.sha.outputs.SHORT_SHA }})
+        name: Latest Build
         body: |
           ## Automatic Build
           
@@ -62,7 +53,4 @@ jobs:
           3. Enter class name
           4. Click Generate!
         files: ./publish/SchoolReportGenerator.exe
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+        make_latest: true
