@@ -2,144 +2,115 @@ name: Build Portable App
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    - name: Install LibreOffice
-      shell: powershell
-      run: |
-        Write-Host "Installing LibreOffice via Chocolatey..."
-        choco install libreoffice-fresh -y --no-progress
-        
-        # Verify installation
-        $soffice = "C:\Program Files\LibreOffice\program\soffice.exe"
-        if (Test-Path $soffice) {
-          Write-Host "✓ LibreOffice installed at: $soffice"
-        } else {
-          Write-Host "Looking for soffice.exe..."
-          Get-ChildItem -Path "C:\Program Files" -Recurse -Filter "soffice.exe" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
-        }
-
-    - name: Install Python dependencies
-      run: |
-        cd portable-app
-        pip install -r requirements.txt
-
-    - name: Run tests
-      run: |
-        cd portable-app
-        python tests/run_all_tests.py
-
-    - name: Test PDF generation
-      shell: powershell
-      run: |
-        cd portable-app
-        
-        # Run a quick integration test
-        python -c "
-import sys
-sys.path.insert(0, 'app')
-from services.pdf_converter import PDFConverter
-
-try:
-    converter = PDFConverter()
-    print(f'LibreOffice found: {converter.libreoffice_path}')
-    print(f'Version: {converter.get_version()}')
-    print('✓ PDF converter ready')
-except Exception as e:
-    print(f'Error: {e}')
-    sys.exit(1)
-"
-
-    - name: Create portable package
-      shell: powershell
-      run: |
-        $buildDir = "portable-app/build"
-        $distDir = "portable-app/dist"
-        
-        # Create directories
-        New-Item -ItemType Directory -Force -Path $buildDir
-        New-Item -ItemType Directory -Force -Path $distDir
-        
-        # Copy app files
-        Copy-Item -Path "portable-app/app" -Destination "$buildDir/app" -Recurse -Force
-        Copy-Item -Path "portable-app/config" -Destination "$buildDir/config" -Recurse -Force
-        Copy-Item -Path "portable-app/input_files" -Destination "$buildDir/input_files" -Recurse -Force
-        Copy-Item -Path "portable-app/start.bat" -Destination "$buildDir/start.bat" -Force
-        Copy-Item -Path "portable-app/start.sh" -Destination "$buildDir/start.sh" -Force
-        Copy-Item -Path "portable-app/README.md" -Destination "$buildDir/README.md" -Force
-        Copy-Item -Path "portable-app/requirements.txt" -Destination "$buildDir/requirements.txt" -Force
-        
-        # Copy LibreOffice (installed via choco)
-        $loSource = "C:\Program Files\LibreOffice"
-        if (Test-Path $loSource) {
-          Write-Host "Copying LibreOffice..."
-          Copy-Item -Path $loSource -Destination "$buildDir/libreoffice" -Recurse -Force
-          Write-Host "✓ LibreOffice copied"
-        }
-        
-        # Create ZIP
-        Write-Host "Creating ZIP..."
-        Compress-Archive -Path "$buildDir/*" -DestinationPath "$distDir/ReportCardGenerator-Portable.zip" -Force
-        
-        $size = (Get-Item "$distDir/ReportCardGenerator-Portable.zip").Length / 1MB
-        Write-Host "Created: ReportCardGenerator-Portable.zip ($([math]::Round($size, 1)) MB)"
-
-    - name: Get short SHA
-      id: sha
-      shell: bash
-      run: echo "SHORT_SHA=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
-
-    - name: Delete existing release
-      uses: dev-drprasad/delete-tag-and-release@v1.0
-      with:
-        tag_name: portable-latest
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        delete_release: true
-      continue-on-error: true
-
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: portable-latest
-        name: Portable App (${{ steps.sha.outputs.SHORT_SHA }})
-        body: |
-          ## Report Card Generator - Portable Edition
+      - name: Install LibreOffice
+        shell: powershell
+        run: |
+          Write-Host "Installing LibreOffice via Chocolatey..."
+          choco install libreoffice-fresh -y --no-progress
           
-          **Self-contained, no installation required!**
+          $soffice = "C:\Program Files\LibreOffice\program\soffice.exe"
+          if (Test-Path $soffice) {
+            Write-Host "LibreOffice installed at: $soffice"
+          } else {
+            Write-Host "Looking for soffice.exe..."
+            Get-ChildItem -Path "C:\Program Files" -Recurse -Filter "soffice.exe" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName }
+          }
+
+      - name: Install Python dependencies
+        run: |
+          cd portable-app
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          cd portable-app
+          python tests/run_all_tests.py
+
+      - name: Test PDF converter
+        shell: powershell
+        run: |
+          cd portable-app
+          python -c "import sys; sys.path.insert(0, 'app'); from services.pdf_converter import PDFConverter; c = PDFConverter(); print('LibreOffice:', c.libreoffice_path)"
+
+      - name: Create portable package
+        shell: powershell
+        run: |
+          $buildDir = "portable-app\build"
+          $distDir = "portable-app\dist"
           
-          ### What's Included
-          - ✅ LibreOffice (for PDF generation)
-          - ✅ All dependencies bundled
-          - ✅ Sample files included
+          New-Item -ItemType Directory -Force -Path $buildDir
+          New-Item -ItemType Directory -Force -Path $distDir
           
-          ### How to Use
-          1. Download `ReportCardGenerator-Portable.zip`
-          2. Extract to any folder
-          3. Install Python 3.10+ if not installed
-          4. Run: `pip install -r requirements.txt`
-          5. Double-click `start.bat`
-          6. Open browser to `http://localhost:8080`
+          Copy-Item -Path "portable-app\app" -Destination "$buildDir\app" -Recurse -Force
+          Copy-Item -Path "portable-app\config" -Destination "$buildDir\config" -Recurse -Force
+          Copy-Item -Path "portable-app\input_files" -Destination "$buildDir\input_files" -Recurse -Force
+          Copy-Item -Path "portable-app\start.bat" -Destination "$buildDir\start.bat" -Force
+          Copy-Item -Path "portable-app\start.sh" -Destination "$buildDir\start.sh" -Force
+          Copy-Item -Path "portable-app\README.md" -Destination "$buildDir\README.md" -Force
+          Copy-Item -Path "portable-app\requirements.txt" -Destination "$buildDir\requirements.txt" -Force
           
-          ### Requirements
-          - Windows 10/11 (64-bit)
-          - Python 3.10+ installed
+          $loSource = "C:\Program Files\LibreOffice"
+          if (Test-Path $loSource) {
+            Write-Host "Copying LibreOffice..."
+            Copy-Item -Path $loSource -Destination "$buildDir\libreoffice" -Recurse -Force
+            Write-Host "LibreOffice copied"
+          }
           
-          Built from commit: ${{ github.sha }}
-        files: portable-app/dist/ReportCardGenerator-Portable.zip
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          Write-Host "Creating ZIP..."
+          Compress-Archive -Path "$buildDir\*" -DestinationPath "$distDir\ReportCardGenerator-Portable.zip" -Force
+          
+          $size = (Get-Item "$distDir\ReportCardGenerator-Portable.zip").Length / 1MB
+          Write-Host "Created: ReportCardGenerator-Portable.zip ($([math]::Round($size, 1)) MB)"
+
+      - name: Get short SHA
+        id: sha
+        shell: bash
+        run: echo "SHORT_SHA=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+
+      - name: Delete existing release
+        uses: dev-drprasad/delete-tag-and-release@v1.0
+        with:
+          tag_name: portable-latest
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          delete_release: true
+        continue-on-error: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: portable-latest
+          name: Portable App (${{ steps.sha.outputs.SHORT_SHA }})
+          body: |
+            ## Report Card Generator - Portable Edition
+            
+            Self-contained package with LibreOffice bundled.
+            
+            ### How to Use
+            1. Download and extract the ZIP
+            2. Install Python 3.10+ if needed
+            3. Run: pip install -r requirements.txt
+            4. Double-click start.bat
+            5. Open http://localhost:8080
+            
+            Built from: ${{ github.sha }}
+          files: portable-app/dist/ReportCardGenerator-Portable.zip
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
