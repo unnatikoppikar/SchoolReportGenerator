@@ -1,118 +1,150 @@
 # School Report Card Generator
 
-A cross-platform application for generating PDF report cards from Excel data.
+Generate PDF report cards from Excel data and Word templates. **No Microsoft Word required!**
 
-## Download
+---
 
-**[Download SchoolReportGenerator.exe](https://github.com/utkarsh-koppikar/SchoolReportGenerator/releases/latest/download/SchoolReportGenerator.exe)** - Windows executable (self-contained, no installation required)
+## 🚀 Quick Start (Recommended)
 
-[View all releases](https://github.com/utkarsh-koppikar/SchoolReportGenerator/releases)
+### Option 1: Docker (Works on any Windows PC)
 
-## Features
+#### One-Time Setup (5 minutes)
 
-- ✅ **No Microsoft Word required** - Generates PDFs directly
-- ✅ **Self-contained executable** - No .NET or other runtime needed on target machine
-- ✅ **Cross-platform development** - Built with .NET 9 and Avalonia UI
-- ✅ **Live progress tracking** - Shows current student and remaining count
-- ✅ **Simple GUI** - Easy file selection and one-click generation
+| Step | Action |
+|------|--------|
+| 1 | Go to [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) |
+| 2 | Click **"Download for Windows"** |
+| 3 | Run installer → Next → Next → Finish |
+| 4 | **Restart computer** |
+| 5 | Open **Docker Desktop** from Start Menu |
+| 6 | Wait until you see ✅ "Running" (bottom-left corner) |
 
-## How It Works
+#### Run the App
 
-1. **Excel File** - Contains student data (names, grades, etc.)
-2. **Mapping File** - JSON file that maps Excel columns to report fields
-3. **Class Name** - Used for output folder naming
-4. **Output** - PDF report cards generated in `{ClassName} report_cards/` folder
+| Step | Action |
+|------|--------|
+| 1 | Make sure Docker Desktop is running (green whale 🐳 in taskbar) |
+| 2 | Download [`Run-ReportGenerator.bat`](https://github.com/utkarsh-koppikar/SchoolReportGenerator/raw/main/Run-ReportGenerator.bat) |
+| 3 | **Double-click** the `.bat` file |
+| 4 | Browser opens automatically at `http://localhost:8080` |
+| 5 | Upload your files and generate reports! |
+| 6 | Press any key in the black window to stop |
 
-## Usage
+**That's it! No command line needed.** 🎉
 
-### GUI Mode
-1. Run `SchoolReportGenerator.exe`
-2. Browse and select your Excel file
-3. Browse and select your Word template (used for reference only)
-4. Browse and select your mapping JSON file
-5. Enter the class name
-6. Click "Generate Report Cards"
-7. Watch the progress bar as reports are generated
+---
 
-### Command Line Mode
-```bash
-SchoolReportGenerator.exe <excel_path> <template_path> <mapping_path> <class_name>
-```
+### Option 2: Online (No Installation)
 
-Example:
-```bash
-SchoolReportGenerator.exe "./marks.xlsx" "./template.docx" "./mapping.json" "Class_5A"
-```
+Use the hosted version (may be slow on free tier):
 
-## File Formats
+🌐 **[reportgen-9eyd.onrender.com](https://reportgen-9eyd.onrender.com)**
 
-### Excel File
-- First row: Headers (ignored)
-- Subsequent rows: Student data
-- Columns referenced by letter (A, B, C, etc.)
+---
 
-### Mapping JSON
-Maps field names to Excel column letters:
+### Option 3: Standalone EXE (Requires Microsoft Word)
+
+**[Download SchoolReportGenerator.exe](https://github.com/utkarsh-koppikar/SchoolReportGenerator/releases/tag/latest)**
+
+> ⚠️ This option requires Microsoft Word installed for PDF conversion.
+
+---
+
+## 📋 How It Works
+
+1. **Excel File** (.xlsx) - Contains student data (names, grades, etc.)
+2. **Word Template** (.docx) - Your report card design with `{{placeholders}}`
+3. **Mapping File** (.json) - Maps Excel columns to template placeholders
+4. **Output** - Individual PDF report cards for each student
+
+### Example Mapping File
+
 ```json
 {
     "name": "A",
     "class": "B",
-    "result": "C",
-    "marks": "D"
+    "english": "C",
+    "math": "D",
+    "science": "E",
+    "result": "F"
 }
 ```
 
-## Development
+This maps:
+- Column A → `{{name}}`
+- Column B → `{{class}}`
+- Column C → `{{english}}`
+- etc.
 
-### Prerequisites
-- .NET 9 SDK
-- Visual Studio Code or Visual Studio
+---
+
+## ✨ Features
+
+| Feature | Docker Version | EXE Version |
+|---------|---------------|-------------|
+| PDF Generation | ✅ LibreOffice (bundled) | ✅ Requires Word |
+| No Installation | ✅ Just Docker | ✅ Self-contained |
+| Web UI | ✅ Browser-based | ❌ Desktop app |
+| Works Offline | ✅ Yes | ✅ Yes |
+| Progress Tracking | ✅ Yes | ✅ Yes |
+
+---
+
+## 🛠️ For Developers
+
+### Run with Docker
+
+```bash
+docker run -p 8080:8080 ghcr.io/utkarsh-koppikar/reportgen:latest
+```
 
 ### Build from Source
+
 ```bash
+# Clone
+git clone https://github.com/utkarsh-koppikar/SchoolReportGenerator.git
+cd SchoolReportGenerator
+
+# Docker
+cd portable-app
+docker build -t reportgen .
+docker run -p 8080:8080 reportgen
+
+# Or C# version
 cd SchoolReportGeneratorCSharp
 dotnet restore
-dotnet build
 dotnet run
 ```
 
-### Build Windows Executable
-```bash
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
-```
-
-Output: `bin/Release/net9.0/win-x64/publish/SchoolReportGenerator.exe`
-
-## Project Structure
+### Project Structure
 
 ```
 SchoolReportGenerator/
-├── SchoolReportGeneratorCSharp/     # C# source code
-│   ├── Program.cs                   # Entry point
-│   ├── MainWindow.axaml             # UI layout
-│   ├── MainWindow.axaml.cs          # UI logic
-│   └── Services/
-│       ├── DataProcessor.cs         # Excel reading
-│       └── ReportCardGenerator.cs   # PDF generation
-├── input_files/                     # Test files
-├── mappings/                        # Mapping templates
-├── dist/                            # Compiled executables
+├── portable-app/                    # Python/Flask web app
+│   ├── Dockerfile                   # Docker config
+│   ├── app/                         # Flask application
+│   │   ├── main.py                  # Web server
+│   │   ├── services/                # Core logic
+│   │   └── templates/               # HTML UI
+│   └── docker-compose.yml
+├── SchoolReportGeneratorCSharp/     # C# desktop app
+├── Run-ReportGenerator.bat          # Windows launcher
+├── render.yaml                      # Cloud deployment
 └── README.md
 ```
 
-## Technology Stack
+---
 
-- **C# / .NET 9** - Core application
-- **Avalonia UI** - Cross-platform GUI framework
-- **ClosedXML** - Excel file reading
-- **QuestPDF** - PDF generation
-- **No external dependencies** - Runs standalone on Windows
+## 📦 Releases
 
-## Legacy Python Version
+| Release | Description | Download |
+|---------|-------------|----------|
+| Docker Image | Web app with LibreOffice | `ghcr.io/utkarsh-koppikar/reportgen:latest` |
+| Portable App | ZIP with bundled dependencies | [portable-latest](https://github.com/utkarsh-koppikar/SchoolReportGenerator/releases/tag/portable-latest) |
+| Windows EXE | Desktop app (needs Word) | [latest](https://github.com/utkarsh-koppikar/SchoolReportGenerator/releases/tag/latest) |
 
-The original Python version is preserved in `README_old.md`. It required Microsoft Word for PDF conversion and had DLL compatibility issues across different Windows machines. The C# version solves these issues with a fully self-contained approach.
+---
 
-## License
+## 📄 License
 
 MIT License
-

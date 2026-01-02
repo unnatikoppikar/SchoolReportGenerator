@@ -1,0 +1,12 @@
+{
+    "header_rows_to_skip": 4,
+    "placeholder_prefix": "{{",
+    "placeholder_suffix": "}}",
+    "default_null_value": "---",
+    "null_indicators": ["NAN", "NONE", "NA", "NULL", ""],
+    "libreoffice_timeout_seconds": 60,
+    "allowed_excel_extensions": [".xlsx", ".xls"],
+    "allowed_template_extensions": [".docx"],
+    "allowed_mapping_extensions": [".json"]
+}
+
