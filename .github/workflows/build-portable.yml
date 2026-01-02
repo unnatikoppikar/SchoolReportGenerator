@@ -1,0 +1,155 @@
+name: Build Portable App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'portable-app/**'
+      - '.github/workflows/build-portable.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Download LibreOffice Portable
+      shell: powershell
+      run: |
+        $ProgressPreference = 'SilentlyContinue'
+        
+        # Create directories
+        New-Item -ItemType Directory -Force -Path "portable-app/build/libreoffice"
+        
+        # Download LibreOffice Portable (using 7-zip portable for extraction)
+        Write-Host "Downloading 7-Zip..."
+        Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile "7zr.exe"
+        
+        # Download LibreOffice as 7z archive (smaller, easier to extract)
+        Write-Host "Downloading LibreOffice Portable..."
+        $loUrl = "https://download.documentfoundation.org/libreoffice/portable/24.8.4/LibreOfficePortablePrevious_24.8.4_MultilingualStandard.paf.exe"
+        Invoke-WebRequest -Uri $loUrl -OutFile "LibreOfficePortable.exe"
+        
+        # Extract using 7-Zip (the .paf.exe is a 7z self-extractor)
+        Write-Host "Extracting LibreOffice..."
+        .\7zr.exe x LibreOfficePortable.exe -o"portable-app/build/libreoffice" -y
+        
+        # Verify extraction
+        if (Test-Path "portable-app/build/libreoffice/App/libreoffice/program/soffice.exe") {
+          Write-Host "✓ LibreOffice extracted successfully"
+        } else {
+          Write-Host "Looking for soffice.exe..."
+          Get-ChildItem -Path "portable-app/build/libreoffice" -Recurse -Filter "soffice.exe" | ForEach-Object { Write-Host $_.FullName }
+        }
+
+    - name: Install Python dependencies
+      run: |
+        cd portable-app
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Copy app files to build
+      shell: powershell
+      run: |
+        $buildDir = "portable-app/build"
+        
+        # Copy app
+        Copy-Item -Path "portable-app/app" -Destination "$buildDir/app" -Recurse -Force
+        
+        # Copy config
+        Copy-Item -Path "portable-app/config" -Destination "$buildDir/config" -Recurse -Force
+        
+        # Copy input_files
+        Copy-Item -Path "portable-app/input_files" -Destination "$buildDir/input_files" -Recurse -Force
+        
+        # Copy scripts
+        Copy-Item -Path "portable-app/start.bat" -Destination "$buildDir/start.bat" -Force
+        Copy-Item -Path "portable-app/start.sh" -Destination "$buildDir/start.sh" -Force
+        Copy-Item -Path "portable-app/README.md" -Destination "$buildDir/README.md" -Force
+        Copy-Item -Path "portable-app/requirements.txt" -Destination "$buildDir/requirements.txt" -Force
+
+    - name: Update LibreOffice path in pdf_converter
+      shell: powershell
+      run: |
+        # The LibreOffice Portable structure after extraction
+        # Update pdf_converter.py to look in the right place
+        $converterPath = "portable-app/build/app/services/pdf_converter.py"
+        $content = Get-Content $converterPath -Raw
+        
+        # Add the portable app path
+        $newPath = 'Path(__file__).parent.parent.parent / "libreoffice" / "App" / "libreoffice" / "program" / "soffice.exe"'
+        $content = $content -replace 'Path\(__file__\)\.parent\.parent\.parent\.parent / "libreoffice" / "program" / "soffice\.exe"', $newPath
+        
+        Set-Content -Path $converterPath -Value $content
+
+    - name: Run tests
+      run: |
+        cd portable-app
+        python tests/run_all_tests.py
+
+    - name: Create distribution ZIP
+      shell: powershell
+      run: |
+        $distDir = "portable-app/dist"
+        New-Item -ItemType Directory -Force -Path $distDir
+        
+        # Create ZIP
+        Compress-Archive -Path "portable-app/build/*" -DestinationPath "$distDir/ReportCardGenerator-Portable.zip" -Force
+        
+        # Get size
+        $size = (Get-Item "$distDir/ReportCardGenerator-Portable.zip").Length / 1MB
+        Write-Host "Created: ReportCardGenerator-Portable.zip ($([math]::Round($size, 1)) MB)"
+
+    - name: Get short SHA
+      id: sha
+      shell: bash
+      run: echo "SHORT_SHA=${GITHUB_SHA:0:7}" >> $GITHUB_OUTPUT
+
+    - name: Delete existing release
+      uses: dev-drprasad/delete-tag-and-release@v1.0
+      with:
+        tag_name: portable-latest
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        delete_release: true
+      continue-on-error: true
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: portable-latest
+        name: Portable App (${{ steps.sha.outputs.SHORT_SHA }})
+        body: |
+          ## Report Card Generator - Portable Edition
+          
+          **Self-contained, no installation required!**
+          
+          ### What's Included
+          - ✅ Python runtime
+          - ✅ LibreOffice Portable (for PDF generation)
+          - ✅ All dependencies bundled
+          - ✅ Sample files included
+          
+          ### How to Use
+          1. Download `ReportCardGenerator-Portable.zip`
+          2. Extract to any folder
+          3. Double-click `start.bat`
+          4. Open browser to `http://localhost:8080`
+          
+          ### Requirements
+          - Windows 10/11 (64-bit)
+          - No other software needed!
+          
+          Built from commit: ${{ github.sha }}
+        files: portable-app/dist/ReportCardGenerator-Portable.zip
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

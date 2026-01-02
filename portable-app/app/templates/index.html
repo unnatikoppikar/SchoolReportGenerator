@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Report Card Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📄 Report Card Generator</h1>
+            <p class="subtitle">Generate PDF report cards from Excel data and Word templates</p>
+        </header>
+
+        <!-- Status Banner -->
+        {% if not libreoffice_available %}
+        <div class="alert alert-error">
+            <strong>⚠️ LibreOffice Not Found</strong>
+            <p>LibreOffice is required for PDF generation. Please install LibreOffice or place LibreOffice Portable in the 'libreoffice' folder.</p>
+        </div>
+        {% else %}
+        <div class="alert alert-success">
+            <strong>✓ Ready</strong>
+            <p>LibreOffice detected: {{ libreoffice_version or 'Available' }}</p>
+        </div>
+        {% endif %}
+
+        <!-- File Upload Form -->
+        <form id="uploadForm" class="upload-form">
+            <div class="form-section">
+                <h2>📁 Select Files</h2>
+                
+                <div class="file-input-group">
+                    <label for="excel_file">Excel File (.xlsx)</label>
+                    <input type="file" id="excel_file" name="excel_file" accept=".xlsx,.xls" required>
+                    <span class="file-name" id="excel_file_name">No file selected</span>
+                </div>
+
+                <div class="file-input-group">
+                    <label for="template_file">Word Template (.docx)</label>
+                    <input type="file" id="template_file" name="template_file" accept=".docx" required>
+                    <span class="file-name" id="template_file_name">No file selected</span>
+                </div>
+
+                <div class="file-input-group">
+                    <label for="mapping_file">Mapping File (.json)</label>
+                    <input type="file" id="mapping_file" name="mapping_file" accept=".json" required>
+                    <span class="file-name" id="mapping_file_name">No file selected</span>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h2>⚙️ Configuration</h2>
+                
+                <div class="input-group">
+                    <label for="class_name">Class Name</label>
+                    <input type="text" id="class_name" name="class_name" placeholder="e.g., Class_5A" required>
+                    <span class="hint">Underscores will be replaced with spaces in output</span>
+                </div>
+            </div>
+
+            <button type="submit" id="generateBtn" class="btn btn-primary" {% if not libreoffice_available %}disabled{% endif %}>
+                🚀 Generate Report Cards
+            </button>
+        </form>
+
+        <!-- Progress Section -->
+        <div id="progressSection" class="progress-section hidden">
+            <h2>⏳ Generating...</h2>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-info">
+                <span id="progressText">0 / 0</span>
+                <span id="currentStudent"></span>
+            </div>
+            <p id="progressStatus" class="progress-status"></p>
+        </div>
+
+        <!-- Results Section -->
+        <div id="resultsSection" class="results-section hidden">
+            <h2 id="resultsTitle">Results</h2>
+            <div id="resultsContent"></div>
+            <div id="downloadSection" class="hidden">
+                <a id="downloadLink" class="btn btn-success" href="#" download>
+                    📥 Download All (ZIP)
+                </a>
+            </div>
+            <button id="resetBtn" class="btn btn-secondary">
+                🔄 Generate Another
+            </button>
+        </div>
+
+        <footer>
+            <p>Report Card Generator v2.0 | No Microsoft Word Required</p>
+        </footer>
+    </div>
+
+    <script>
+        // State
+        let sessionId = null;
+        let uploadedFiles = {};
+
+        // DOM Elements
+        const uploadForm = document.getElementById('uploadForm');
+        const progressSection = document.getElementById('progressSection');
+        const resultsSection = document.getElementById('resultsSection');
+        const generateBtn = document.getElementById('generateBtn');
+
+        // File input handlers
+        document.querySelectorAll('input[type="file"]').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const fileName = e.target.files[0]?.name || 'No file selected';
+                document.getElementById(e.target.id + '_name').textContent = fileName;
+            });
+        });
+
+        // Form submission
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const className = document.getElementById('class_name').value.trim();
+            if (!className) {
+                alert('Please enter a class name');
+                return;
+            }
+
+            // Disable form
+            generateBtn.disabled = true;
+            generateBtn.textContent = '⏳ Uploading...';
+
+            try {
+                // Step 1: Upload files
+                const formData = new FormData();
+                formData.append('excel_file', document.getElementById('excel_file').files[0]);
+                formData.append('template_file', document.getElementById('template_file').files[0]);
+                formData.append('mapping_file', document.getElementById('mapping_file').files[0]);
+
+                const uploadResponse = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const uploadResult = await uploadResponse.json();
+                
+                if (!uploadResult.success) {
+                    throw new Error(uploadResult.error);
+                }
+
+                sessionId = uploadResult.session_id;
+                uploadedFiles = uploadResult.files;
+
+                // Step 2: Generate reports
+                showProgress();
+                generateBtn.textContent = '⏳ Generating...';
+
+                const generateResponse = await fetch('/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        class_name: className,
+                        excel_path: uploadedFiles.excel,
+                        template_path: uploadedFiles.template,
+                        mapping_path: uploadedFiles.mapping
+                    })
+                });
+
+                const generateResult = await generateResponse.json();
+                showResults(generateResult);
+
+            } catch (error) {
+                showError(error.message);
+            }
+        });
+
+        // Reset button
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            // Cleanup server-side
+            if (sessionId) {
+                fetch('/cleanup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId })
+                });
+            }
+
+            // Reset UI
+            sessionId = null;
+            uploadedFiles = {};
+            uploadForm.reset();
+            document.querySelectorAll('.file-name').forEach(el => el.textContent = 'No file selected');
+            
+            progressSection.classList.add('hidden');
+            resultsSection.classList.add('hidden');
+            uploadForm.style.display = 'block';
+            generateBtn.disabled = false;
+            generateBtn.textContent = '🚀 Generate Report Cards';
+        });
+
+        function showProgress() {
+            uploadForm.style.display = 'none';
+            progressSection.classList.remove('hidden');
+            resultsSection.classList.add('hidden');
+        }
+
+        function updateProgress(current, total, studentName, status) {
+            const percent = (current / total) * 100;
+            document.getElementById('progressFill').style.width = percent + '%';
+            document.getElementById('progressText').textContent = `${current} / ${total}`;
+            document.getElementById('currentStudent').textContent = studentName;
+            document.getElementById('progressStatus').textContent = status;
+        }
+
+        function showResults(result) {
+            progressSection.classList.add('hidden');
+            resultsSection.classList.remove('hidden');
+
+            const title = document.getElementById('resultsTitle');
+            const content = document.getElementById('resultsContent');
+            const downloadSection = document.getElementById('downloadSection');
+            const downloadLink = document.getElementById('downloadLink');
+
+            if (result.success || result.generated > 0) {
+                title.textContent = '✅ Generation Complete';
+                title.className = 'success';
+                
+                content.innerHTML = `
+                    <div class="result-stats">
+                        <div class="stat">
+                            <span class="stat-value">${result.total_students}</span>
+                            <span class="stat-label">Total Students</span>
+                        </div>
+                        <div class="stat success">
+                            <span class="stat-value">${result.generated}</span>
+                            <span class="stat-label">Generated</span>
+                        </div>
+                        ${result.failed > 0 ? `
+                        <div class="stat error">
+                            <span class="stat-value">${result.failed}</span>
+                            <span class="stat-label">Failed</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+
+                if (result.errors && result.errors.length > 0) {
+                    content.innerHTML += `
+                        <div class="error-list">
+                            <h3>Errors:</h3>
+                            <ul>
+                                ${result.errors.map(e => `<li>${e}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+
+                if (result.download_url) {
+                    downloadSection.classList.remove('hidden');
+                    downloadLink.href = result.download_url;
+                } else {
+                    downloadSection.classList.add('hidden');
+                }
+
+            } else {
+                title.textContent = '❌ Generation Failed';
+                title.className = 'error';
+                
+                content.innerHTML = `
+                    <div class="error-list">
+                        <ul>
+                            ${result.errors.map(e => `<li>${e}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+                downloadSection.classList.add('hidden');
+            }
+        }
+
+        function showError(message) {
+            progressSection.classList.add('hidden');
+            resultsSection.classList.remove('hidden');
+            
+            document.getElementById('resultsTitle').textContent = '❌ Error';
+            document.getElementById('resultsTitle').className = 'error';
+            document.getElementById('resultsContent').innerHTML = `<p class="error-message">${message}</p>`;
+            document.getElementById('downloadSection').classList.add('hidden');
+            
+            generateBtn.disabled = false;
+            generateBtn.textContent = '🚀 Generate Report Cards';
+        }
+    </script>
+</body>
+</html>
+

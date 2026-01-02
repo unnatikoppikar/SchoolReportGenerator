@@ -23,12 +23,20 @@ word/
 /mappings/*
 !/mappings/test*
 
-# Python legacy (can be removed later)
+# Python
 venv/
 __pycache__/
 *.pyc
 *.spec
 build/
 
-# Executables in dist (large files)
+# Executables and distributions
 dist/*.exe
+dist/*.zip
+
+# Portable app build artifacts
+portable-app/build/
+portable-app/dist/
+portable-app/venv/
+portable-app/uploads/
+portable-app/output/
