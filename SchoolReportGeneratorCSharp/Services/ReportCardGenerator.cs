@@ -3,14 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using DocumentFormat.OpenXml.Packaging;
-using DocumentFormat.OpenXml.Wordprocessing;
 
 namespace SchoolReportGenerator.Services;
 
 /// <summary>
 /// Manages the generation of report cards.
-/// Uses Open XML SDK to fill templates + Word Interop for PDF conversion.
+/// Uses Word Interop for template filling AND PDF conversion.
+/// This matches the original Python approach and handles placeholders correctly.
 /// </summary>
 public class ReportCardGenerator
 {
@@ -24,10 +23,8 @@ public class ReportCardGenerator
         Console.WriteLine($"mapping_path: {mappingPath}");
 
         // Setup directories
-        var reportCardsDir = Path.Combine(Directory.GetCurrentDirectory(), $"{className} report_cards");
-        var tempDir = Path.Combine(Directory.GetCurrentDirectory(), "temp_docx");
+        var reportCardsDir = Path.GetFullPath($"{className} report_cards");
         EnsureDirectoryExists(reportCardsDir);
-        EnsureDirectoryExists(tempDir);
 
         // Process data
         using var dataProcessor = new DataProcessor(excelPath, mappingPath);
@@ -35,130 +32,62 @@ public class ReportCardGenerator
         // Get all student rows first to know total count
         var studentRows = dataProcessor.GetStudentRows().ToList();
         var total = studentRows.Count;
-        var current = 0;
 
-        // Collect all docx files to convert
-        var docxFiles = new List<(string docxPath, string pdfPath)>();
-
-        // Step 1: Fill templates (fast, no Word needed)
-        foreach (var row in studentRows)
+        if (total == 0)
         {
-            var studentData = dataProcessor.ProcessStudentData(row, className);
-            
-            if (studentData == null || !studentData.ContainsKey("name"))
-            {
-                continue;
-            }
-
-            current++;
-            var studentName = studentData["name"];
-            var safeFileName = SanitizeFileName(studentName);
-            
-            // Report progress
-            progressCallback?.Invoke(current, total, $"{studentName} (filling template)");
-            Console.WriteLine($"Filling template for {studentName} ({current}/{total})");
-
-            var docxPath = Path.Combine(tempDir, $"{safeFileName}.docx");
-            var pdfPath = Path.Combine(reportCardsDir, $"{safeFileName}.pdf");
-            
-            FillWordTemplate(templatePath, studentData, docxPath);
-            docxFiles.Add((docxPath, pdfPath));
+            Console.WriteLine("No student data found!");
+            return;
         }
 
-        // Step 2: Convert all to PDF using Word (batch for efficiency)
-        Console.WriteLine("Converting to PDF...");
-        ConvertDocxToPdfBatch(docxFiles, progressCallback, total);
-
-        // Cleanup temp files
-        try { Directory.Delete(tempDir, true); } catch { }
-    }
-
-    /// <summary>
-    /// Fill Word template using Open XML SDK (no Word needed).
-    /// </summary>
-    private void FillWordTemplate(string templatePath, Dictionary<string, string> studentData, string outputPath)
-    {
-        // Copy template to output
-        File.Copy(templatePath, outputPath, true);
-
-        // Open and modify
-        using var doc = WordprocessingDocument.Open(outputPath, true);
-        var body = doc.MainDocumentPart?.Document?.Body;
-        
-        if (body == null) return;
-
-        // Replace all placeholders
-        foreach (var text in body.Descendants<Text>())
+        // Check if Word is available
+        var wordType = Type.GetTypeFromProgID("Word.Application");
+        if (wordType == null)
         {
-            foreach (var kvp in studentData)
-            {
-                var placeholder = "{{" + kvp.Key + "}}";
-                if (text.Text.Contains(placeholder))
-                {
-                    text.Text = text.Text.Replace(placeholder, kvp.Value);
-                }
-            }
+            Console.WriteLine("ERROR: Microsoft Word is not installed. Cannot generate report cards.");
+            return;
         }
 
-        doc.MainDocumentPart?.Document?.Save();
-    }
-
-    /// <summary>
-    /// Convert docx files to PDF using Word Interop (batch processing).
-    /// </summary>
-    private void ConvertDocxToPdfBatch(List<(string docxPath, string pdfPath)> files, Action<int, int, string>? progressCallback, int total)
-    {
         dynamic? wordApp = null;
         
         try
         {
-            // Create Word application
-            var wordType = Type.GetTypeFromProgID("Word.Application");
-            if (wordType == null)
-            {
-                Console.WriteLine("Microsoft Word is not installed. Keeping .docx files only.");
-                // Copy docx to output folder
-                foreach (var (docxPath, pdfPath) in files)
-                {
-                    var docxOutput = Path.ChangeExtension(pdfPath, ".docx");
-                    File.Copy(docxPath, docxOutput, true);
-                }
-                return;
-            }
-
+            // Create Word application ONCE for all documents
             wordApp = Activator.CreateInstance(wordType);
             wordApp.Visible = false;
             wordApp.DisplayAlerts = 0; // wdAlertsNone
 
             var current = 0;
-            foreach (var (docxPath, pdfPath) in files)
-            {
-                current++;
-                var studentName = Path.GetFileNameWithoutExtension(docxPath);
-                progressCallback?.Invoke(current, total, $"{studentName} (converting to PDF)");
-                Console.WriteLine($"Converting {studentName} to PDF ({current}/{files.Count})");
 
-                dynamic doc = wordApp.Documents.Open(Path.GetFullPath(docxPath));
+            foreach (var row in studentRows)
+            {
+                var studentData = dataProcessor.ProcessStudentData(row, className);
                 
-                // WdSaveFormat.wdFormatPDF = 17
-                doc.SaveAs2(Path.GetFullPath(pdfPath), 17);
-                doc.Close(0); // wdDoNotSaveChanges
+                if (studentData == null || !studentData.ContainsKey("name"))
+                {
+                    Console.WriteLine("Skipping row - no name found");
+                    continue;
+                }
+
+                current++;
+                var studentName = studentData["name"];
+                var safeFileName = SanitizeFileName(studentName);
                 
-                Marshal.ReleaseComObject(doc);
+                // Report progress
+                progressCallback?.Invoke(current, total, studentName);
+                Console.WriteLine($"Generating report card for {studentName} ({current}/{total})");
+
+                var pdfPath = Path.Combine(reportCardsDir, $"{safeFileName}.pdf");
+
+                // Open template, fill placeholders, save as PDF
+                GenerateSingleReport(wordApp, templatePath, studentData, pdfPath);
             }
+
+            Console.WriteLine($"\nCompleted! Generated {current} report cards in: {reportCardsDir}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"PDF conversion error: {ex.Message}");
-            Console.WriteLine("Keeping .docx files only.");
-            
-            // Copy docx to output folder as fallback
-            foreach (var (docxPath, pdfPath) in files)
-            {
-                var docxOutput = Path.ChangeExtension(pdfPath, ".docx");
-                if (File.Exists(docxPath))
-                    File.Copy(docxPath, docxOutput, true);
-            }
+            Console.WriteLine($"ERROR: {ex.Message}");
+            Console.WriteLine(ex.StackTrace);
         }
         finally
         {
@@ -166,8 +95,72 @@ public class ReportCardGenerator
             {
                 try
                 {
-                    wordApp.Quit(0);
+                    wordApp.Quit(0); // wdDoNotSaveChanges
                     Marshal.ReleaseComObject(wordApp);
+                }
+                catch { }
+            }
+            
+            // Force garbage collection to release COM objects
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
+    }
+
+    /// <summary>
+    /// Generate a single report card using Word.
+    /// Opens template, replaces ALL placeholders, saves as PDF.
+    /// </summary>
+    private void GenerateSingleReport(dynamic wordApp, string templatePath, Dictionary<string, string> studentData, string pdfPath)
+    {
+        dynamic? doc = null;
+        
+        try
+        {
+            // Open template
+            doc = wordApp.Documents.Open(Path.GetFullPath(templatePath), ReadOnly: false);
+
+            // Replace ALL placeholders using Word's Find & Replace
+            // This handles text split across multiple runs correctly!
+            foreach (var kvp in studentData)
+            {
+                var placeholder = "{{" + kvp.Key + "}}";
+                var value = kvp.Value ?? "---";
+                
+                // Use Word's Find & Replace - handles split runs correctly
+                var find = doc.Content.Find;
+                find.ClearFormatting();
+                find.Replacement.ClearFormatting();
+                
+                // Find and replace
+                find.Execute(
+                    FindText: placeholder,
+                    MatchCase: false,
+                    MatchWholeWord: false,
+                    MatchWildcards: false,
+                    MatchSoundsLike: false,
+                    MatchAllWordForms: false,
+                    Forward: true,
+                    Wrap: 1, // wdFindContinue
+                    Format: false,
+                    ReplaceWith: value,
+                    Replace: 2 // wdReplaceAll
+                );
+            }
+
+            // Save as PDF (WdSaveFormat.wdFormatPDF = 17)
+            doc.SaveAs2(Path.GetFullPath(pdfPath), 17);
+            
+            Console.WriteLine($"  -> Saved: {Path.GetFileName(pdfPath)}");
+        }
+        finally
+        {
+            if (doc != null)
+            {
+                try
+                {
+                    doc.Close(0); // wdDoNotSaveChanges
+                    Marshal.ReleaseComObject(doc);
                 }
                 catch { }
             }
