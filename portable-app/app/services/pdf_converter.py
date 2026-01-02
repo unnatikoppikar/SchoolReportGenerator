@@ -52,10 +52,10 @@ class PDFConverter:
         
         if system == "Windows":
             possible_paths = [
-                # Bundled LibreOffice Portable (relative to app - portable structure)
-                Path(__file__).parent.parent.parent / "libreoffice" / "App" / "libreoffice" / "program" / "soffice.exe",
-                # Bundled portable version (alternative structure)
+                # Bundled LibreOffice (relative to app folder - from build)
                 Path(__file__).parent.parent.parent / "libreoffice" / "program" / "soffice.exe",
+                # Bundled LibreOffice Portable structure
+                Path(__file__).parent.parent.parent / "libreoffice" / "App" / "libreoffice" / "program" / "soffice.exe",
                 # Standard installations
                 Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "LibreOffice" / "program" / "soffice.exe",
                 Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "LibreOffice" / "program" / "soffice.exe",
