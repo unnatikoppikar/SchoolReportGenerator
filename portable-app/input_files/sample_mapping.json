@@ -1,0 +1,12 @@
+{
+    "rollno": "A",
+    "name": "B",
+    "english": "C",
+    "hindi": "D",
+    "maths": "E",
+    "science": "F",
+    "total": "G",
+    "percentage": "H",
+    "result": "I",
+    "grade": "J"
+}

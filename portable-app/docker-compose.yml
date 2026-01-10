@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  reportgen:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount input/output directories for easy file access
+      - ./input_files:/app/input_files
+      - ./output:/app/output
+    environment:
+      - FLASK_ENV=production
+

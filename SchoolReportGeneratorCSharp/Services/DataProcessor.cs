@@ -46,14 +46,14 @@ public class DataProcessor : IDisposable
 
     /// <summary>
     /// Gets all student rows from the Excel file.
-    /// Skips header row(s) - starts from row 2.
+    /// Skips first 4 rows (like Python: df.drop([0, 1, 2, 3])) - starts from row 5.
     /// </summary>
     public IEnumerable<IXLRow> GetStudentRows()
     {
         var lastRow = _worksheet.LastRowUsed()?.RowNumber() ?? 0;
         
-        // Skip first row (header), start from row 2
-        for (int rowNum = 2; rowNum <= lastRow; rowNum++)
+        // Skip first 4 rows (rows 1-4), start from row 5
+        for (int rowNum = 5; rowNum <= lastRow; rowNum++)
         {
             var row = _worksheet.Row(rowNum);
             // Skip empty rows

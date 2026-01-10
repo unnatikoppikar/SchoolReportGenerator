@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: reportgen
+    runtime: docker
+    dockerfilePath: ./portable-app/Dockerfile
+    dockerContext: ./portable-app
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 10000
+
