@@ -69,11 +69,22 @@ class DataProcessor:
         """
         Load Excel file and skip header rows.
         Uses header=None to read raw data without interpreting first row as headers.
+        Automatically finds the first non-empty sheet if multiple sheets exist.
         """
-        df = pd.read_excel(self.excel_path, header=None)
+        # Get all sheet names
+        xl = pd.ExcelFile(self.excel_path)
+        sheet_names = xl.sheet_names
+        
+        # Find first non-empty sheet
+        df = pd.DataFrame()
+        for sheet_name in sheet_names:
+            temp_df = pd.read_excel(self.excel_path, sheet_name=sheet_name, header=None)
+            if not temp_df.empty and temp_df.shape[0] > 0 and temp_df.shape[1] > 0:
+                df = temp_df
+                break
         
         # Skip header rows
-        if self.header_rows_to_skip > 0:
+        if self.header_rows_to_skip > 0 and not df.empty:
             df = df.iloc[self.header_rows_to_skip:]
             df = df.reset_index(drop=True)
         
